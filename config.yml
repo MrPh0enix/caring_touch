@@ -1,0 +1,9 @@
+
+
+
+robot:
+  ip: 172.22.2.3
+  operating_freq: 250
+
+load_cell:
+  height: 0.10   # in meters from robot base
