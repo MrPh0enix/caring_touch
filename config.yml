@@ -4,6 +4,7 @@
 robot:
   ip: 172.22.2.3
   operating_freq: 250
+  contact_threshold: 1.0 # Unit: N
 
 load_cell:
-  height: 0.10   # in meters from robot base
+  height: 0.20   # in meters from robot base

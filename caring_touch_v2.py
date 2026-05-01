@@ -271,7 +271,10 @@ def recording_thread(filename):
     with open(filename, mode="w", newline="") as file:
         writer = csv.writer(file)
 
-        writer.writerow(["time", "x", "y", "z", "fz", 'q', 'r'])
+        writer.writerow(["time", "q1", "q2", "q3", "q4", 'q5', 'q6', 'q7', 
+        'ext_wrench_f_x', 'ext_wrench_f_y', 'ext_wrench_f_z', 'ext_wrench_trq_x', 'ext_wrench_trq_y', 'ext_wrench_trq_z', 
+        'ee_frame_wrench_f_x', 'ee_frame_wrench_f_y', 'ee_frame_wrench_f_z', 'ee_frame_wrench_trq_x', 'ee_frame_wrench_trq_y', 'ee_frame_wrench_trq_z',
+        'joint_trq_without_g_1', 'joint_trq_without_g_2', 'joint_trq_without_g_3', 'joint_trq_without_g_4', 'joint_trq_without_g_5', 'joint_trq_without_g_6', 'joint_trq_without_g_7'])
 
         while not data_queue.empty():
 
@@ -283,7 +286,7 @@ def recording_thread(filename):
                 continue
 def record(robot_state):
     global data_queue
-    data_queue.put(robot_state.q)
+    data_queue.put([robot_state.time.to_sec()] + robot_state.q + robot_state.O_F_ext_hat_K + robot_state.K_F_ext_hat_K + robot_state.tau_J_d)
 
 
 
@@ -373,6 +376,8 @@ def APPROACH1_run():
 
     z_force_offset = state.K_F_ext_hat_K[2]
 
+    
+
 
     robot.start_controller(impController)
 
@@ -387,11 +392,10 @@ def APPROACH1_run():
     with robot.create_context(frequency = config['robot']['operating_freq']) as ctx:
 
         dt = 1.0 / config['robot']['operating_freq']
-        dz = -0.002 * dt  # convert m/s → per-step displacement
+        dz = -0.002 * dt  # convert m/s per-step displacement
 
-        threshold = 1.0 - z_force_offset
+        threshold = config['robot']['contact_threshold'] - z_force_offset
         
-
         moving = True
         Fz_filt = 0.0
         alpha = 0.1
@@ -455,7 +459,7 @@ def STEPFORCE_run(force, filename):
                 force_command = np.zeros(6)
 
             elif t < 10.0:
-                force_command = np.array([0, 0, -force, 0, 0, 0])
+                force_command = np.array([0, 0, -force + z_force_offset, 0, 0, 0])
             
             else:
                 robot.stop_controller()
@@ -497,7 +501,7 @@ def RAMPFORCE_run(act_time, filename):
                 force_command = np.zeros(6)
 
             elif t < act_time+2:
-                force = 2.0 + (t - 2.0) * (6.0 / act_time)
+                force = (2.0 + (t - 2.0) * (6.0 / act_time)) + z_force_offset
                 force_command = np.array([0, 0, -force, 0, 0, 0])
 
             elif t < 10:
@@ -543,7 +547,7 @@ def SINFORCE_run(coeff, filename):
                 force_command = np.zeros(6)
 
             elif t < 9.0:
-                force = 5 + 3 * math.sin(coeff*t - coeff)
+                force = (5 + 3 * math.sin(coeff*t - coeff)) + z_force_offset
                 force_command = np.array([0, 0, -force, 0, 0, 0])
             
             else:
@@ -585,7 +589,7 @@ def SWEEP_run(coeff, filename):
                 force_command = np.zeros(6)
 
             elif t < 9.0:
-                force = 5 + 3 * math.sin((coeff*t - coeff)**2)
+                force = (5 + 3 * math.sin((coeff*t - coeff)**2)) + z_force_offset
                 force_command = np.array([0, 0, -force, 0, 0, 0])
             
             else:
