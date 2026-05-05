@@ -2,7 +2,8 @@
 
 
 robot:
-  ip: 172.22.2.3
+  # ip: 172.22.2.3
+  ip: 127.0.0.1
   operating_freq: 250
 
 load_cell:
