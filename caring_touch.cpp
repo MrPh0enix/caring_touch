@@ -6,12 +6,41 @@
 #include <array>
 #include <cmath>
 #include <iostream>
+#include <unordered_map>
 
 enum class State {
-    SIN_X,
-    SIN_Y,
-    SIN_Z
+    INIT,
+    CALIB,
+    APPROACH1,
+    STEPFORCE1,
+    STEPFORCE2,
+    STEPFORCE3,
+    RAMPFORCE1,
+    RAMPFORCE2,
+    RAMPFORCE3,
+    RAMPFORCE4,
+    SINFORCE1,
+    SINFORCE2,
+    SINFORCE3,
+    SINFORCE4,
+    SINFORCE5,
+    SWEEP1,
+    SWEEP2,
+    SWEEP3
 };
+
+
+auto INIT_run = [&](franka::Robot& robot) {
+    robot.control([&](const franka::RobotState& state, franka::Duration period) -> franka::Torques {
+            
+
+        
+
+        
+    });
+};
+
+
 
 int main() {
     
@@ -28,16 +57,28 @@ int main() {
             {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0}}
         );
 
-        State current_state = State::SIN_X;
+        State current_state = State::INIT;
 
-        double state_start_time = 0.0;
-        double total_time = 0.0;
+        franka::RobotState initial_state = robot.readOnce();
 
-        const double duration_per_state = 5.0;  // seconds
-        const double amplitude = 0.05;          // 5 cm
-        const double frequency = 0.5;           // Hz
 
-        std::array<double, 16> initial_pose{};
+        auto trq_ctrl_loop = [&](const franka::RobotState& state, franka::Duration period) -> franka::Torques {
+            
+
+
+
+        
+        };
+
+
+        auto cartesian_pose_ctrl_loop = [&](const franka::RobotState& state, franka::Duration period) -> franka::CartesianPose {
+        
+            
+
+        
+        };
+
+
 
         robot.control([&](const franka::RobotState& state,
                           franka::Duration period) -> franka::CartesianPose {
