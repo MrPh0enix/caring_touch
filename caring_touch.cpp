@@ -30,14 +30,37 @@ enum class State {
 };
 
 
-auto INIT_run = [&](franka::Robot& robot) {
-    robot.control([&](const franka::RobotState& state, franka::Duration period) -> franka::Torques {
+
+
+
+
+auto INIT_run = [](franka::Robot& robot) {
+
+    robot.control([](const franka::RobotState& state, franka::Duration period) -> franka::Torques {
             
-
+        std::array<double, 7> tau_cmd = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
         
-
+        return tau_cmd;
         
     });
+
+};
+
+
+bool run_motion(franka::Robot& robot, State& state) {
+
+    while (true) {
+
+        switch(state) {
+
+            case State::INIT:
+                std::cout<<"Move the robot to the desired position"<<std::endl;
+                INIT_run(robot);
+
+        }
+
+    }
+
 };
 
 
@@ -49,26 +72,15 @@ int main() {
 
         std::cout << "Connected to robot" << std::endl; 
 
-        // Set collision behavior (required)
-        robot.setCollisionBehavior(
-            {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0}},
-            {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0}},
-            {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0}},
-            {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0}}
-        );
+        // set collision behavior
+        robot.setCollisionBehavior({{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
+                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
+                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
+                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
 
-        State current_state = State::INIT;
+        State initial_state = State::INIT;
 
         franka::RobotState initial_state = robot.readOnce();
-
-
-        auto trq_ctrl_loop = [&](const franka::RobotState& state, franka::Duration period) -> franka::Torques {
-            
-
-
-
-        
-        };
 
 
         auto cartesian_pose_ctrl_loop = [&](const franka::RobotState& state, franka::Duration period) -> franka::CartesianPose {
@@ -127,6 +139,12 @@ int main() {
 
             return franka::CartesianPose(pose);
         });
+
+
+
+
+        run_motion(robot, initial_state);
+
 
     } catch (const franka::Exception& e) {
         std::cout << e.what() << std::endl;
