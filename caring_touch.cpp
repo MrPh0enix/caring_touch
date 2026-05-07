@@ -7,6 +7,9 @@
 #include <cmath>
 #include <iostream>
 #include <unordered_map>
+#include <Eigen/Dense>
+#include "utils/pose_mover.h"
+
 
 enum class State {
     INIT,
@@ -30,11 +33,14 @@ enum class State {
 };
 
 
+franka::RobotState initial_state;
 
 
 
 
-auto INIT_run = [](franka::Robot& robot) {
+
+
+auto INIT_run = [&](franka::Robot& robot) {
 
     robot.control([](const franka::RobotState& state, franka::Duration period) -> franka::Torques {
             
@@ -43,6 +49,24 @@ auto INIT_run = [](franka::Robot& robot) {
         return tau_cmd;
         
     });
+
+};
+
+auto CALIB_run = [&](franka::Robot& robot) {
+
+    franka::RobotState state = robot.readOnce();
+    Eigen::Map<const Eigen::Matrix4d> T(state.O_T_EE.data());
+    Eigen::Vector3d target_position = T.block<3,1>(0,3);
+
+    std::array<double, 16> initial_pose = initial_state.O_T_EE;
+
+    // quat = R.from_matrix(init_pose).as_quat()
+    double time = 0.0;
+
+    PoseMover mover(target, 5.0);
+
+    robot.control(mover);
+    
 
 };
 
@@ -57,11 +81,22 @@ bool run_motion(franka::Robot& robot, State& state) {
                 std::cout<<"Move the robot to the desired position"<<std::endl;
                 INIT_run(robot);
 
+            case State::CALIB:
+                std::cout<<"-------------------------------------------------"<<std::endl;
+                std::cout<<"Initial calibration of robot"<<std::endl;
+                std::cout<<"Press q when done ...."<<std::endl;
+                CALIB_run(robot);
+
+            case State::APPROACH1:
+
+
         }
 
     }
 
 };
+
+
 
 
 
@@ -78,72 +113,12 @@ int main() {
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
 
-        State initial_state = State::INIT;
 
         franka::RobotState initial_state = robot.readOnce();
 
 
-        auto cartesian_pose_ctrl_loop = [&](const franka::RobotState& state, franka::Duration period) -> franka::CartesianPose {
-        
-            
-
-        
-        };
-
-
-
-        robot.control([&](const franka::RobotState& state,
-                          franka::Duration period) -> franka::CartesianPose {
-
-            double dt = period.toSec();
-            total_time += dt;
-
-            if (total_time == dt) {
-                initial_pose = state.O_T_EE_c;
-                state_start_time = total_time;
-            }
-
-            double t = total_time - state_start_time;
-
-            // State transition
-            if (t > duration_per_state) {
-                state_start_time = total_time;
-
-                switch (current_state) {
-                    case State::SIN_X: current_state = State::SIN_Y; break;
-                    case State::SIN_Y: current_state = State::SIN_Z; break;
-                    case State::SIN_Z: current_state = State::SIN_X; break;
-                }
-            }
-
-            // Copy pose
-            std::array<double, 16> pose = initial_pose;
-
-            double omega = 2 * M_PI * frequency;
-            double offset = amplitude * std::sin(omega * t);
-
-            // Apply sinusoid depending on state
-            switch (current_state) {
-                case State::SIN_X:
-                    pose[12] = initial_pose[12] + offset;
-                    break;
-
-                case State::SIN_Y:
-                    pose[13] = initial_pose[13] + offset;
-                    break;
-
-                case State::SIN_Z:
-                    pose[14] = initial_pose[14] + offset;
-                    break;
-            }
-
-            return franka::CartesianPose(pose);
-        });
-
-
-
-
-        run_motion(robot, initial_state);
+        State state = State::INIT;
+        run_motion(robot, state);
 
 
     } catch (const franka::Exception& e) {
