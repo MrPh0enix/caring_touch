@@ -13,11 +13,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(CapnProto REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(Franka REQUIRED)
+# find_package(Franka REQUIRED)
 
-# use libfarnka 0.18.0
-# set(FRANKA_ROOT /home/johnkiran/libfranka/build)
-# find_package(Franka REQUIRED PATHS ${FRANKA_ROOT} NO_DEFAULT_PATH)
+# libfranka
+set(CMAKE_PREFIX_PATH "/home/john/libfranka_v0.9")
+find_package(Franka REQUIRED)
 
 
 # include Eigen3
@@ -26,7 +26,9 @@ include_directories(${EIGEN3_INCLUDE_DIR})
 
 # compile the executables
 add_executable(caring_touch
-            caring_touch.cpp)
+            caring_touch.cpp
+            utils/pose_mover.cpp
+            utils/examples_common.cpp)
 
 # Link libraries
 target_link_libraries(caring_touch
