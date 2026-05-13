@@ -13,6 +13,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(CapnProto REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(Threads REQUIRED)
 # find_package(Franka REQUIRED)
 
 # libfranka
@@ -33,4 +34,5 @@ add_executable(caring_touch
 # Link libraries
 target_link_libraries(caring_touch
     Franka::Franka
+    Threads::Threads
 )

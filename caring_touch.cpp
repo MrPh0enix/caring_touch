@@ -7,6 +7,7 @@
 #include <termios.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <atomic>
 
 #include <thread>
 #include <array>
@@ -78,6 +79,88 @@ void keyListener() {
 }
 
 
+void moveToPose(franka::Robot& robot, const std::array<double, 16>& desired_pose, double duration = 5.0) {
+
+    // -----------------------------
+    // READ START POSE (ONCE)
+    // -----------------------------
+    franka::RobotState state0 = robot.readOnce();
+
+    Eigen::Map<const Eigen::Matrix4d> T_start(state0.O_T_EE.data());
+    Eigen::Map<const Eigen::Matrix4d> T_goal(desired_pose.data());
+
+    Eigen::Vector3d p_start = T_start.block<3,1>(0,3);
+    Eigen::Matrix3d R_start = T_start.block<3,3>(0,0);
+
+    Eigen::Vector3d p_goal = T_goal.block<3,1>(0,3);
+    Eigen::Matrix3d R_goal = T_goal.block<3,3>(0,0);
+
+    Eigen::Quaterniond q_start(R_start);
+    Eigen::Quaterniond q_goal(R_goal);
+
+    // -----------------------------
+    // TIME
+    // -----------------------------
+    double time = 0.0;
+
+    // -----------------------------
+    // CONTROL LOOP
+    // -----------------------------
+    robot.control(
+        [&](const franka::RobotState& state,
+            franka::Duration period) -> franka::CartesianPose {
+
+            time += period.toSec();
+
+            double tau = std::min(time / duration, 1.0);
+
+            // smoothstep (C2 continuous)
+            double s = 10 * std::pow(tau, 3)
+                     - 15 * std::pow(tau, 4)
+                     + 6 * std::pow(tau, 5);
+
+            // -----------------------------
+            // POSITION INTERPOLATION
+            // -----------------------------
+            Eigen::Vector3d p_des =
+                p_start + s * (p_goal - p_start);
+
+            // -----------------------------
+            // ORIENTATION INTERPOLATION
+            // -----------------------------
+            Eigen::Quaterniond q_des =
+                q_start.slerp(s, q_goal);
+            q_des.normalize();
+
+            Eigen::Matrix3d R_des = q_des.toRotationMatrix();
+
+            // -----------------------------
+            // BUILD POSE
+            // -----------------------------
+            Eigen::Matrix4d T_des = Eigen::Matrix4d::Identity();
+            T_des.block<3,3>(0,0) = R_des;
+            T_des.block<3,1>(0,3) = p_des;
+
+            std::array<double, 16> pose_array;
+            Eigen::Map<Eigen::Matrix4d>(pose_array.data()) = T_des;
+
+            // -----------------------------
+            // STOP CONDITION
+            // -----------------------------
+            if (tau >= 1.0) {
+                return franka::MotionFinished(
+                    franka::CartesianPose(pose_array));
+            }
+
+            return franka::CartesianPose(pose_array);
+        });
+
+        
+}
+
+
+
+
 
 
 auto INIT_run = [](franka::Robot& robot) {
@@ -106,6 +189,8 @@ auto INIT_run = [](franka::Robot& robot) {
 
 };
 
+
+
 auto CALIB_run = [](franka::Robot& robot) {
 
     franka::RobotState state = robot.readOnce();
@@ -114,7 +199,30 @@ auto CALIB_run = [](franka::Robot& robot) {
 
     std::array<double, 16> initial_pose = initial_state.O_T_EE;
     Eigen::Map<const Eigen::Matrix4d> T_r(initial_pose.data());
-    Eigen::Matrix3d R = T_r.block<3,3>(0,0);
+    Eigen::Matrix3d R_initial = T_r.block<3,3>(0,0);
+
+    Eigen::Matrix4d new_pose = Eigen::Matrix4d::Identity();
+    new_pose.block<3,3>(0,0) = R_initial;
+    new_pose.block<3,1>(0,3) = target_position;
+    std::array<double, 16> pose_array;
+    Eigen::Map<Eigen::Matrix4d>(pose_array.data()) = new_pose;
+
+    moveToPose(robot, pose_array);
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+};
+
+
+
+auto APPROACH1_run = [](franka::Robot& robot) {
+
+    franka::RobotState state = robot.readOnce();
+    Eigen::Map<const Eigen::Matrix4d> T(state.O_T_EE.data());
+    Eigen::Vector3d target_position = T.block<3,1>(0,3);
+    target_position(2) = target_position(2) + 0.16;
+
+    Eigen::Matrix3d R = T.block<3,3>(0,0);
 
     Eigen::Matrix4d new_pose = Eigen::Matrix4d::Identity();
     new_pose.block<3,3>(0,0) = R;
@@ -122,12 +230,8 @@ auto CALIB_run = [](franka::Robot& robot) {
     std::array<double, 16> pose_array;
     Eigen::Map<Eigen::Matrix4d>(pose_array.data()) = new_pose;
 
-    PoseMover mover(pose_array, 10.0);
-    robot.control(mover);
+    moveToPose(robot, pose_array, 5.0);
 
-};
-
-auto APPROACH1_run = [](franka::Robot& robot) {
 
 };
 
@@ -152,7 +256,12 @@ bool run_motion(franka::Robot& robot, State& state) {
                 std::cout<<"Calibration done...."<<std::endl;
                 state = State::APPROACH1;
 
-            // case State::APPROACH1:
+            case State::APPROACH1:
+                std::cout<<"-------------------------------------------------"<<std::endl;
+                std::cout<<"Robot approaching sample till threshold force"<<std::endl;
+                APPROACH1_run(robot);
+                std::cout<<"Contact Achieved...."<<std::endl;
+                state = State::STEPFORCE1;
 
 
         }
@@ -168,7 +277,7 @@ bool run_motion(franka::Robot& robot, State& state) {
 int main() {
     
     try {
-        franka::Robot robot("172.22.2.4"); // change IP
+        franka::Robot robot("172.22.2.3"); // change IP
 
         std::cout << "Connected to robot" << std::endl; 
 
