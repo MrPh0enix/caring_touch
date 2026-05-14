@@ -79,65 +79,91 @@ void keyListener() {
 }
 
 
-void moveToPose(franka::Robot& robot, const std::array<double, 16>& desired_pose, double duration = 5.0) {
 
-    franka::RobotState state0 = robot.readOnce();
+void moveToPose(franka::Robot& robot,
+                const std::array<double, 16>& desired_pose,
+                double duration = 10.0) {
 
-    Eigen::Map<const Eigen::Matrix4d> T_start(state0.O_T_EE.data());
+    // franka::RobotState state0 = robot.readOnce();
+    // static Eigen::Vector3d p_start;
+    // static Eigen::Quaterniond q_start;
+
+    // Eigen::Map<const Eigen::Matrix4d> T_start(state0.O_T_EE.data());
     Eigen::Map<const Eigen::Matrix4d> T_goal(desired_pose.data());
 
-    Eigen::Vector3d p_start = T_start.block<3,1>(0,3);
-    Eigen::Matrix3d R_start = T_start.block<3,3>(0,0);
-
-    Eigen::Vector3d p_goal = T_goal.block<3,1>(0,3);
-    Eigen::Matrix3d R_goal = T_goal.block<3,3>(0,0);
-
-    Eigen::Quaterniond q_start(R_start);
-    Eigen::Quaterniond q_goal(R_goal);
-
+    // Eigen::Vector3d p_start = T_start.block<3,1>(0,3);
+    Eigen::Vector3d p_goal  = T_goal.block<3,1>(0,3);
     
-    double time = 0.0;
+    // std::cout << T_start << std::endl;
+    // std::cout << "------------------------------------------------" << std::endl;
+    // std::cout << T_goal << std::endl;
 
-    
-    robot.control(
-        [&](const franka::RobotState& state,
-            franka::Duration period) -> franka::CartesianPose {
 
-            time += period.toSec();
+    // Eigen::Quaterniond q_start(T_start.block<3,3>(0,0));
+    Eigen::Quaterniond q_goal(T_goal.block<3,3>(0,0));
 
-            double tau = std::min(time / duration, 1.0);
 
-            double s = 10 * std::pow(tau, 3)
-                     - 15 * std::pow(tau, 4)
-                     + 6 * std::pow(tau, 5);
+    robot.control([&](const franka::RobotState& state, franka::Duration period)
+                  -> franka::CartesianPose {
+
+        static bool init = false;
+        static Eigen::Vector3d p_start;
+        static Eigen::Quaterniond q_start;
+        static double t = 0.0;
+
+        t += period.toSec();
+        
+        std::cout << "------------------------------------------------" << std::endl;
+        std::cout << "dt: " << period.toSec() << std::endl;
+
+        if (!init) {
+            Eigen::Map<const Eigen::Matrix4d> T(state.O_T_EE.data());
+            p_start = T.block<3,1>(0,3);
+            q_start = Eigen::Quaterniond(T.block<3,3>(0,0));
+            init = true;
+            t = 0.0;
+        }
+
+        double tau = std::min(t / duration, 1.0);
 
         
-            Eigen::Vector3d p_des =
-                p_start + s * (p_goal - p_start);
+        std::cout << "------------------------------------------------" << std::endl;
+        std::cout << "tau: " << tau << std::endl;
 
-            
-            Eigen::Quaterniond q_des =
-                q_start.slerp(s, q_goal);
-            q_des.normalize();
+        // smoothstep (good for Franka)
+        double s = tau * tau * (3 - 2 * tau);
 
-            Eigen::Matrix3d R_des = q_des.toRotationMatrix();
-
-            Eigen::Matrix4d T_des = Eigen::Matrix4d::Identity();
-            T_des.block<3,3>(0,0) = R_des;
-            T_des.block<3,1>(0,3) = p_des;
-
-            std::array<double, 16> pose_array;
-            Eigen::Map<Eigen::Matrix4d>(pose_array.data()) = T_des;
-
-            if (tau >= 1.0) {
-                return franka::MotionFinished(
-                    franka::CartesianPose(pose_array));
-            }
-
-            return franka::CartesianPose(pose_array);
-        });
-
+        Eigen::Vector3d p = p_start + s * (p_goal - p_start);
         
+        std::cout << "------------------------------------------------" << std::endl;
+        std::cout << "pos error: " << (p_goal - p).norm() << std::endl;
+
+        Eigen::Quaterniond q = q_start.slerp(s, q_goal);
+        q.normalize();
+        
+        std::cout << "------------------------------------------------" << std::endl;
+        double angle_error = q.angularDistance(q_goal);
+        std::cout << "rot error (rad): " << angle_error << std::endl;
+
+        Eigen::Matrix4d T = Eigen::Matrix4d::Identity();
+        T.block<3,3>(0,0) = q.toRotationMatrix();
+        T.block<3,1>(0,3) = p;
+
+        std::cout << "------------------------------------------------" << std::endl;
+        double vnorm = 0.0;
+        for (const auto& v : state.dq) vnorm += v * v;
+        vnorm = std::sqrt(vnorm);
+        std::cout << "joint vel norm: " << vnorm << std::endl;
+
+        std::array<double, 16> pose{};
+        Eigen::Map<Eigen::Matrix4d>(pose.data()) = T;
+
+        if (tau >= 1.0) {
+            return franka::MotionFinished(franka::CartesianPose(pose));
+        }
+
+        return franka::CartesianPose(pose);
+    });
 }
 
 
@@ -191,8 +217,6 @@ auto CALIB_run = [](franka::Robot& robot) {
 
     moveToPose(robot, pose_array);
 
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-
 };
 
 
@@ -222,34 +246,33 @@ bool run_motion(franka::Robot& robot, State& state) {
 
     while (true) {
 
-        switch(state) {
+        if (state == State::INIT) {
+            std::cout<<"-------------------------------------------------"<<std::endl;
+            std::cout<<"Move the robot to the desired position"<<std::endl;
+            std::cout<<"Press q when done ...."<<std::endl;
+            INIT_run(robot);
+            state = State::CALIB;
+        }
 
-            case State::INIT:
-                std::cout<<"-------------------------------------------------"<<std::endl;
-                std::cout<<"Move the robot to the desired position"<<std::endl;
-                std::cout<<"Press q when done ...."<<std::endl;
-                INIT_run(robot);
-                state = State::CALIB;
+        if (state == State::CALIB) {
+            std::cout<<"-------------------------------------------------"<<std::endl;
+            std::cout<<"Initial calibration of robot"<<std::endl;
+            CALIB_run(robot);
+            std::cout<<"Calibration done...."<<std::endl;
+            state = State::APPROACH1;
+        }
 
-            case State::CALIB:
-                std::cout<<"-------------------------------------------------"<<std::endl;
-                std::cout<<"Initial calibration of robot"<<std::endl;
-                CALIB_run(robot);
-                std::cout<<"Calibration done...."<<std::endl;
-                state = State::APPROACH1;
-
-            case State::APPROACH1:
-                std::cout<<"-------------------------------------------------"<<std::endl;
-                std::cout<<"Robot approaching sample till threshold force"<<std::endl;
-                APPROACH1_run(robot);
-                std::cout<<"Contact Achieved...."<<std::endl;
-                state = State::STEPFORCE1;
-
-
+        if (state == State::APPROACH1) {
+            std::cout<<"-------------------------------------------------"<<std::endl;
+            std::cout<<"Robot approaching sample till threshold force"<<std::endl;
+            APPROACH1_run(robot);
+            std::cout<<"Contact Achieved...."<<std::endl;
+            state = State::STEPFORCE1;
         }
 
     }
 
+    return true;
 };
 
 
@@ -259,7 +282,7 @@ bool run_motion(franka::Robot& robot, State& state) {
 int main() {
     
     try {
-        franka::Robot robot("172.22.2.3"); // change IP
+        franka::Robot robot("192.168.33.3"); // change IP
 
         std::cout << "Connected to robot" << std::endl; 
 
@@ -276,10 +299,10 @@ int main() {
         robot.control(motion_generator);
 
 
-        franka::RobotState initial_state = robot.readOnce();
+        initial_state = robot.readOnce();
 
 
-        State state = State::INIT;
+        State state = State::CALIB;
         run_motion(robot, state);
 
 
