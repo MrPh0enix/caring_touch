@@ -81,9 +81,6 @@ void keyListener() {
 
 void moveToPose(franka::Robot& robot, const std::array<double, 16>& desired_pose, double duration = 5.0) {
 
-    // -----------------------------
-    // READ START POSE (ONCE)
-    // -----------------------------
     franka::RobotState state0 = robot.readOnce();
 
     Eigen::Map<const Eigen::Matrix4d> T_start(state0.O_T_EE.data());
@@ -98,14 +95,10 @@ void moveToPose(franka::Robot& robot, const std::array<double, 16>& desired_pose
     Eigen::Quaterniond q_start(R_start);
     Eigen::Quaterniond q_goal(R_goal);
 
-    // -----------------------------
-    // TIME
-    // -----------------------------
+    
     double time = 0.0;
 
-    // -----------------------------
-    // CONTROL LOOP
-    // -----------------------------
+    
     robot.control(
         [&](const franka::RobotState& state,
             franka::Duration period) -> franka::CartesianPose {
@@ -114,29 +107,21 @@ void moveToPose(franka::Robot& robot, const std::array<double, 16>& desired_pose
 
             double tau = std::min(time / duration, 1.0);
 
-            // smoothstep (C2 continuous)
             double s = 10 * std::pow(tau, 3)
                      - 15 * std::pow(tau, 4)
                      + 6 * std::pow(tau, 5);
 
-            // -----------------------------
-            // POSITION INTERPOLATION
-            // -----------------------------
+        
             Eigen::Vector3d p_des =
                 p_start + s * (p_goal - p_start);
 
-            // -----------------------------
-            // ORIENTATION INTERPOLATION
-            // -----------------------------
+            
             Eigen::Quaterniond q_des =
                 q_start.slerp(s, q_goal);
             q_des.normalize();
 
             Eigen::Matrix3d R_des = q_des.toRotationMatrix();
 
-            // -----------------------------
-            // BUILD POSE
-            // -----------------------------
             Eigen::Matrix4d T_des = Eigen::Matrix4d::Identity();
             T_des.block<3,3>(0,0) = R_des;
             T_des.block<3,1>(0,3) = p_des;
@@ -144,9 +129,6 @@ void moveToPose(franka::Robot& robot, const std::array<double, 16>& desired_pose
             std::array<double, 16> pose_array;
             Eigen::Map<Eigen::Matrix4d>(pose_array.data()) = T_des;
 
-            // -----------------------------
-            // STOP CONDITION
-            // -----------------------------
             if (tau >= 1.0) {
                 return franka::MotionFinished(
                     franka::CartesianPose(pose_array));
